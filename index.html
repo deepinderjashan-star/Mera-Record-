@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="मेरा रिकॉर्ड">
+<title>मेरा रिकॉर्ड</title>
+<style>
+:root{--bg:#0e0e11;--card:#1a1a20;--card2:#22222a;--line:#2e2e38;--txt:#f2f2f5;
+--dim:#9a9aa8;--acc:#0a84ff;--ok:#30d158;--warn:#ff9f0a;--red:#ff453a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--txt);
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{position:sticky;top:0;background:rgba(14,14,17,.9);backdrop-filter:blur(14px);
+border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;z-index:10}
+h1{font-size:19px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrap{padding:14px 16px 110px}
+input,textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);
+background:var(--card2);color:var(--txt);font-size:16px;font-family:inherit}
+label{font-size:13px;color:var(--dim);display:block;margin:14px 0 6px}
+button{font-family:inherit;font-size:16px;border:none;border-radius:12px;padding:12px 16px;
+background:var(--card2);color:var(--txt);cursor:pointer}
+button.primary{background:var(--acc);color:#fff;font-weight:600}
+button.ghost{background:transparent;color:var(--acc);padding:8px;font-size:14px}
+button.danger{color:var(--red);background:transparent}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.row{display:flex;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+.t{font-weight:600;font-size:16px}
+.s{font-size:13px;color:var(--dim);margin-top:3px;line-height:1.5}
+.big{font-size:22px;font-weight:700}
+.stat{display:flex;gap:8px;margin-bottom:12px}
+.stat>div{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 6px;text-align:center}
+.stat .v{font-size:17px;font-weight:700}
+.stat .k{font-size:11px;color:var(--dim);margin-top:3px}
+.entry{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.entry:last-child{border-bottom:none}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--acc);margin-top:7px;flex:none}
+.fab{position:fixed;right:18px;bottom:calc(22px + env(safe-area-inset-bottom));
+background:var(--acc);color:#fff;border-radius:50%;width:58px;height:58px;font-size:30px;
+display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(10,132,255,.45);z-index:20}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;z-index:50}
+.sheet{background:var(--card);width:100%;border-radius:20px 20px 0 0;
+padding:20px 16px calc(26px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+.sheet h2{margin:0 0 4px;font-size:18px}
+.empty{text-align:center;color:var(--dim);padding:46px 16px;font-size:15px;line-height:1.7}
+.pill{display:inline-block;background:var(--card2);border-radius:20px;padding:4px 10px;
+font-size:12px;color:var(--dim);margin-right:6px;margin-top:6px}
+.pill.warn{color:var(--warn);background:rgba(255,159,10,.15)}
+.pill.ok{color:var(--ok);background:rgba(48,209,88,.15)}
+.hint{font-size:12px;color:var(--dim);line-height:1.6;margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+  <button class="ghost" id="back" style="display:none;font-size:16px">‹ वापस</button>
+  <h1 id="title">मेरा रिकॉर्ड</h1>
+</header>
+<div class="wrap" id="view"></div>
+<button class="fab" id="fab" style="display:none">+</button>
+<div id="modal"></div>
+
+<script>
+/* ---------- storage ---------- */
+var KEY='meraRecord_v1';
+var db=load(), cur=null, q='';
+function load(){try{var d=JSON.parse(localStorage.getItem(KEY));if(d&&d.topics)return d;}catch(e){}return {topics:[]};}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));}
+function uid(){return Math.random().toString(36).slice(2,10);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function fmtDate(d){if(!d)return '—';var p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+function todayStr(){var t=new Date();return new Date(t.getTime()-t.getTimezoneOffset()*6e4).toISOString().slice(0,10);}
+function daysSince(d){return Math.floor((Date.now()-new Date(d+'T00:00:00').getTime())/864e5);}
+function daysUntil(d){if(!d)return null;
+  return Math.round((new Date(d+'T00:00:00')-new Date(todayStr()+'T00:00:00'))/864e5);}
+
+var view=document.getElementById('view'),titleEl=document.getElementById('title'),
+    backBtn=document.getElementById('back'),fab=document.getElementById('fab'),
+    modal=document.getElementById('modal');
+
+/* ---------- stats ---------- */
+function stats(t){
+  var es=t.entries.slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  var count=es.length, last=count?es[count-1].date:null;
+  var days=last?daysSince(last):null, sum=null;
+  var nums=es.map(function(e){return parseFloat(e.amount);}).filter(function(n){return !isNaN(n);});
+  if(nums.length) sum=nums.reduce(function(a,b){return a+b;},0);
+  var avgGap=null;
+  if(count>1){var g=0;for(var i=1;i<count;i++)g+=(new Date(es[i].date)-new Date(es[i-1].date))/864e5;
+    avgGap=Math.round(g/(count-1))||1;}
+  return {count:count,last:last,days:days,sum:sum,avgGap:avgGap};
+}
+
+/* ---------- home ---------- */
+function renderHome(){
+  cur=null; backBtn.style.display='none'; fab.style.display='none';
+  titleEl.textContent='मेरा रिकॉर्ड';
+  var ql=q.trim().toLowerCase();
+  var list=db.topics.filter(function(t){return t.name.toLowerCase().indexOf(ql)>-1;})
+    .sort(function(a,b){return a.name.localeCompare(b.name);});
+  var h='<input id="search" placeholder="🔍 टॉपिक खोजें..." value="'+esc(q)+'" style="margin-bottom:14px">';
+
+  /* due reminders */
+  var alerts=[];
+  db.topics.forEach(function(t){(t.reminders||[]).forEach(function(r){
+    var d=daysUntil(r.date); if(d!==null&&d<=2) alerts.push({t:t,r:r,d:d});});});
+  if(alerts.length){
+    alerts.sort(function(a,b){return a.d-b.d;});
+    h+='<div class="card" style="border-color:var(--warn)"><div class="t">🔔 आने वाले रिमाइंडर</div>';
+    alerts.forEach(function(x){
+      var when=x.d<0?(-x.d+' दिन पहले निकल गया'):x.d===0?'आज':x.d===1?'कल':(x.d+' दिन में');
+      h+='<div class="s">• <b style="color:var(--txt)">'+esc(x.t.name)+'</b> — '+when+
+         ' ('+fmtDate(x.r.date)+')'+(x.r.note?' · '+esc(x.r.note):'')+'</div>';
+    });
+    h+='<div class="hint">ऐप बंद रहने पर यह अपने आप नहीं दिखेगा। पक्के अलार्म के लिए टॉपिक खोलें → “Calendar में अलार्म जोड़ें”।</div></div>';
+  }
+
+  if(!list.length){
+    h+='<div class="empty">'+(db.topics.length?'कोई टॉपिक नहीं मिला।':
+      'अभी कोई टॉपिक नहीं है।<br>नीचे “+ नया टॉपिक” से शुरू करें —<br>जैसे “Blood Donation”, “Grocery खर्च”, “Car Service”।')+'</div>';
+  }
+  list.forEach(function(t){
+    var st=stats(t);
+    h+='<div class="card" onclick="openTopic(\''+t.id+'\')"><div class="row"><div class="grow">'+
+       '<div class="t">'+esc(t.name)+'</div>'+
+       '<div class="s">'+st.count+' रिकॉर्ड'+(st.last?' · पिछली बार '+fmtDate(st.last):'')+'</div>'+
+       '</div><div style="color:var(--dim);font-size:24px">›</div></div>'+
+       (st.last?'<div><span class="pill '+(st.days>90?'warn':'ok')+'">'+st.days+' दिन पहले</span>'+
+       (st.sum?'<span class="pill">कुल '+st.sum+'</span>':'')+'</div>':'')+'</div>';
+  });
+  h+='<div style="display:flex;gap:10px;margin-top:18px">'+
+     '<button style="flex:1" onclick="addTopic()">+ नया टॉपिक</button>'+
+     '<button style="flex:1" onclick="backup()">बैकअप</button>'+
+     '<button style="flex:1" onclick="restore()">रिस्टोर</button></div>';
+  view.innerHTML=h;
+  var s=document.getElementById('search');
+  s.oninput=function(e){q=e.target.value;renderHome();
+    var el=document.getElementById('search');el.focus();el.setSelectionRange(el.value.length,el.value.length);};
+}
+
+/* ---------- topic detail ---------- */
+function openTopic(id){
+  cur=id;
+  var t=db.topics.find(function(x){return x.id===id;}); if(!t)return;
+  titleEl.textContent=t.name;
+  backBtn.style.display='block'; fab.style.display='flex';
+  var st=stats(t);
+  var entries=t.entries.slice().sort(function(a,b){return a.date<b.date?1:-1;});
+  var h='<div class="stat">'+
+    '<div><div class="v">'+st.count+'</div><div class="k">कुल बार</div></div>'+
+    '<div><div class="v" style="font-size:14px">'+(st.last?fmtDate(st.last):'—')+'</div><div class="k">पिछली बार</div></div>'+
+    '<div><div class="v">'+(st.days!==null?st.days:'—')+'</div><div class="k">दिन पहले</div></div></div>';
+  if(st.sum!==null) h+='<div class="card"><div class="s">कुल जोड़</div><div class="big">'+st.sum+
+    (t.unit?' '+esc(t.unit):'')+'</div></div>';
+  if(st.avgGap) h+='<div class="card"><div class="s">औसत अंतराल — लगभग हर <b style="color:var(--txt)">'+
+    st.avgGap+' दिन</b> में</div></div>';
+
+  h+='<div class="card"><div class="t" style="margin-bottom:6px">📋 सारे रिकॉर्ड ('+entries.length+')</div>';
+  if(!entries.length) h+='<div class="s">अभी कोई रिकॉर्ड नहीं। नीचे “+” दबाएँ।</div>';
+  entries.forEach(function(e){
+    var amt=(e.amount!==null&&e.amount!=='')?esc(String(e.amount))+(t.unit?' '+esc(t.unit):''):'';
+    h+='<div class="entry" onclick="addEntryForm(\''+e.id+'\')"><div class="dot"></div><div class="grow">'+
+       '<div style="font-weight:600">'+fmtDate(e.date)+'</div>'+
+       '<div class="s">'+(amt?amt:'')+(amt&&e.note?' · ':'')+esc(e.note||'')+'</div>'+
+       '</div><div style="color:var(--dim)">›</div></div>';
+  });
+  h+='</div>';
+
+  var rem=(t.reminders||[]).slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  h+='<div class="card"><div class="t">🔔 रिमाइंडर</div>';
+  if(!rem.length) h+='<div class="s">कोई रिमाइंडर सेट नहीं।</div>';
+  rem.forEach(function(r){
+    h+='<div class="entry"><div class="grow"><div style="font-weight:600">'+fmtDate(r.date)+'</div>'+
+       '<div class="s">'+esc(r.note||'रिमाइंडर')+'</div>'+
+       '<div style="margin-top:8px;display:flex;gap:6px">'+
+       '<button class="ghost" onclick="addToCalendar(\''+r.id+'\')">📅 Calendar में अलार्म जोड़ें</button>'+
+       '<button class="ghost danger" onclick="delReminder(\''+r.id+'\')">हटाएँ</button></div></div></div>';
+  });
+  h+='<button style="width:100%;margin-top:12px" onclick="addReminderForm()">+ रिमाइंडर जोड़ें</button>'+
+     '<div class="hint">“Calendar में अलार्म जोड़ें” दबाने पर एक फ़ाइल डाउनलोड होगी — उसे खोलकर Calendar में जोड़ें। फिर तारीख से 1 दिन पहले सुबह 9 बजे iPhone खुद notification देगा, ऐप बंद हो तब भी।</div></div>';
+
+  h+='<div style="display:flex;gap:10px;margin-top:16px">'+
+     '<button style="flex:1" onclick="renameTopic()">नाम बदलें</button>'+
+     '<button style="flex:1" class="danger" onclick="deleteTopic()">टॉपिक हटाएँ</button></div>';
+  view.innerHTML=h;
+}
+
+/* ---------- sheets ---------- */
+function sheet(html){modal.innerHTML='<div class="overlay" onclick="if(event.target===this)closeSheet()">'+
+  '<div class="sheet">'+html+'</div></div>';}
+function closeSheet(){modal.innerHTML='';}
+
+function addTopic(){
+  sheet('<h2>नया टॉपिक</h2>'+
+   '<label>नाम</label><input id="f_name" placeholder="जैसे Blood Donation">'+
+   '<label>यूनिट (ऑप्शनल — ₹, ml, km...)</label><input id="f_unit" placeholder="₹">'+
+   '<div style="display:flex;gap:10px;margin-top:20px">'+
+   '<button style="flex:1" onclick="closeSheet()">रद्द</button>'+
+   '<button class="primary" style="flex:2" onclick="saveTopic()">सेव करें</button></div>');
+  setTimeout(function(){document.getElementById('f_name').focus();},120);
+}
+function saveTopic(){
+  var n=document.getElementById('f_name').value.trim();
+  if(!n){alert('नाम लिखें');return;}
+  var t={id:uid(),name:n,unit:document.getElementById('f_unit').value.trim(),entries:[],reminders:[]};
+  db.topics.push(t);save();closeSheet();openTopic(t.id);
+}
+function renameTopic(){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  var n=prompt('नया नाम',t.name); if(!n)return;
+  t.name=n.trim();save();openTopic(cur);
+}
+function deleteTopic(){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  if(!confirm('“'+t.name+'” और उसके सारे रिकॉर्ड हमेशा के लिए हट जाएँगे। पक्का?'))return;
+  db.topics=db.topics.filter(function(x){return x.id!==cur;});
+  save();renderHome();
+}
+
+/* ---------- entries ---------- */
+function addEntryForm(editId){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  var e=editId?t.entries.find(function(x){return x.id===editId;}):null;
+  sheet('<h2>'+(e?'रिकॉर्ड बदलें':'नया रिकॉर्ड')+'</h2>'+
+   '<label>तारीख</label><input type="date" id="e_date" value="'+(e?e.date:todayStr())+'">'+
+   '<label>'+(t.unit?'कितना ('+esc(t.unit)+') — ऑप्शनल':'कितना / अमाउंट — ऑप्शनल')+'</label>'+
+   '<input id="e_amt" inputmode="decimal" value="'+(e&&e.amount!=null?esc(String(e.amount)):'')+'">'+
+   '<label>नोट — ऑप्शनल</label><textarea id="e_note" rows="3">'+(e?esc(e.note||''):'')+'</textarea>'+
+   '<div style="display:flex;gap:10px;margin-top:20px">'+
+   (e?'<button class="danger" onclick="delEntry(\''+e.id+'\')">हटाएँ</button>':'')+
+   '<button style="flex:1" onclick="closeSheet()">रद्द</button>'+
+   '<button class="primary" style="flex:2" onclick="saveEntry(\''+(e?e.id:'')+'\')">सेव</button></div>');
+}
+function saveEntry(id){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  var date=document.getElementById('e_date').value||todayStr();
+  var raw=document.getElementById('e_amt').value.trim();
+  var note=document.getElementById('e_note').value.trim();
+  if(id){var e=t.entries.find(function(x){return x.id===id;});e.date=date;e.amount=raw===''?null:raw;e.note=note;}
+  else t.entries.push({id:uid(),date:date,amount:raw===''?null:raw,note:note});
+  save();closeSheet();openTopic(cur);
+}
+function delEntry(id){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  if(!confirm('यह रिकॉर्ड हटाएँ?'))return;
+  t.entries=t.entries.filter(function(x){return x.id!==id;});
+  save();closeSheet();openTopic(cur);
+}
+
+/* ---------- reminders ---------- */
+function addReminderForm(){
+  var d=new Date();d.setDate(d.getDate()+1);
+  var def=new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+  sheet('<h2>नया रिमाइंडर</h2>'+
+   '<label>किस तारीख को याद दिलाना है</label><input type="date" id="r_date" value="'+def+'">'+
+   '<label>किस बारे में — ऑप्शनल</label><input id="r_note" placeholder="जैसे blood donation करना है">'+
+   '<div style="display:flex;gap:10px;margin-top:20px">'+
+   '<button style="flex:1" onclick="closeSheet()">रद्द</button>'+
+   '<button class="primary" style="flex:2" onclick="saveReminder()">सेव</button></div>'+
+   '<div class="hint">सेव करने के बाद “📅 Calendar में अलार्म जोड़ें” दबाएँ — तभी असली notification आएगा।</div>');
+}
+function saveReminder(){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  var date=document.getElementById('r_date').value;
+  if(!date){alert('तारीख चुनें');return;}
+  if(!t.reminders)t.reminders=[];
+  t.reminders.push({id:uid(),date:date,note:document.getElementById('r_note').value.trim()});
+  save();closeSheet();openTopic(cur);
+}
+function delReminder(id){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  t.reminders=t.reminders.filter(function(x){return x.id!==id;});
+  save();openTopic(cur);
+}
+function addToCalendar(rid){
+  var t=db.topics.find(function(x){return x.id===cur;});
+  var r=t.reminders.find(function(x){return x.id===rid;});
+  var d=r.date.replace(/-/g,'');
+  var ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MeraRecord//HI',
+    'BEGIN:VEVENT','UID:'+uid()+'@merarecord','DTSTAMP:'+d+'T090000Z',
+    'DTSTART:'+d+'T090000','DTEND:'+d+'T093000',
+    'SUMMARY:'+t.name+' — याद दिलाना','DESCRIPTION:'+(r.note||''),
+    'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY',
+    'DESCRIPTION:'+t.name+' — कल याद दिलाना','END:VALARM',
+    'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  var blob=new Blob([ics],{type:'text/calendar'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download='reminder.ics';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},4000);
+  alert('फ़ाइल डाउनलोड हो गई।\n\nउसे Files/Downloads में खोलें → Calendar में जोड़ें → Save।\nतारीख से 1 दिन पहले सुबह 9 बजे notification आएगा।');
+}
+
+/* ---------- backup ---------- */
+function backup(){
+  var blob=new Blob([JSON.stringify(db)],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;
+  a.download='mera-record-backup-'+todayStr()+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},4000);
+}
+function restore(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='.json';
+  inp.onchange=function(){
+    var f=inp.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      try{var d=JSON.parse(rd.result);if(!d.topics)throw 0;db=d;save();renderHome();alert('रिस्टोर हो गया ✓');}
+      catch(e){alert('फ़ाइल ठीक नहीं है');}
+    };
+    rd.readAsText(f);
+  };
+  inp.click();
+}
+
+/* ---------- boot ---------- */
+backBtn.onclick=function(){renderHome();};
+fab.onclick=function(){if(cur)addEntryForm();else addTopic();};
+renderHome();
+</script>
+</body>
+</html>
